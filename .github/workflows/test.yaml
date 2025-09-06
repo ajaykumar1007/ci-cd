@@ -1,0 +1,48 @@
+name: Test Workflow
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Build, Push & Deploy to GKE
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'  # Needed for OIDC
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v3
+
+      - name: Authenticate to Google Cloud via OIDC
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: "projects/897199863819/locations/global/workloadIdentityPools/github-action-new/providers/github-action-new"
+          service_account: "github-action@grox-backend-service.iam.gserviceaccount.com"
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Build Docker image
+        run: |
+          docker build -t us-central1-docker.pkg.dev/grox-backend-service/stage/test:latest .
+
+      - name: Push Docker image
+        run: |
+          docker push REGION-docker.pkg.dev/grox-backend-service/stage/test:latest
+
+      - name: Set up GKE credentials
+        run: |
+          gcloud container clusters get-credentials CLUSTER_NAME --zone ZONE --project grox-backend-service
+
+      - name: Deploy to GKE
+        run: |
+          kubectl apply -f k8s/deployment.yaml
